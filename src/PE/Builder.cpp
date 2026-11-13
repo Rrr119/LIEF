@@ -42,8 +42,10 @@
 #include "LIEF/PE/debug/VCFeature.hpp"
 #include "LIEF/PE/utils.hpp"
 #include "LIEF/utils.hpp"
+#include "LIEF/BinaryStream/SpanStream.hpp"
 
 #include "PE/Structures.hpp"
+#include "PE/checksum.hpp"
 
 #include "Builder.tcc"
 #include "internal_utils.hpp"
@@ -166,6 +168,42 @@ ok_error_t Builder::build() {
     build_overlay();
   }
 
+  if (config_.recompute_checksum) {
+    auto is_ok = recompute_checksum();
+    if (!is_ok) {
+      LIEF_WARN("Failed to recompute the PE checksum: {}",
+                to_string(is_ok.error()));
+    }
+  }
+
+  return ok();
+}
+
+ok_error_t Builder::recompute_checksum() {
+  if (ios_.raw().empty()) {
+    return make_error_code(lief_errors::build_error);
+  }
+
+  const uint64_t opt_header_offset =
+      binary_->dos_header().addressof_new_exeheader() +
+      sizeof(details::pe_header);
+
+  const uint32_t old_checksum = binary_->optional_header().checksum();
+  SpanStream stream(ios_.raw().data(), ios_.raw().size());
+  ChecksumStream checksum(old_checksum);
+  checksum.write(stream);
+  const uint32_t new_checksum = checksum.finalize();
+
+  const uint64_t checksum_offset =
+      opt_header_offset + (binary_->type() == PE_TYPE::PE32 ?
+                               offsetof(details::pe32_optional_header, CheckSum) :
+                               offsetof(details::pe64_optional_header, CheckSum));
+  if (checksum_offset + sizeof(uint32_t) > ios_.raw().size()) {
+    return make_error_code(lief_errors::build_error);
+  }
+
+  ios_.seekp(checksum_offset).write<uint32_t>(new_checksum);
+  binary_->optional_header().checksum(new_checksum);
   return ok();
 }
 
@@ -406,6 +444,9 @@ ok_error_t Builder::build_resources() {
     for (uint64_t fixup : ctx.rva_fixups) {
       rsrc_stream.reloc<uint32_t>(fixup, rsrc_rva, vector_iostream::RELOC_OP::ADD);
     }
+    for (const auto& [data, offset] : ctx.data_fixups) {
+      data->set_rva(rsrc_rva + offset);
+    }
     rsrc_stream.move(rsrc_data_);
     new_rsrc_section->content(rsrc_data_);
 
@@ -421,6 +462,9 @@ ok_error_t Builder::build_resources() {
   const uint64_t rsrc_rva = rsrc_dir->RVA();
   for (uint64_t fixup : ctx.rva_fixups) {
     rsrc_stream.reloc<uint32_t>(fixup, rsrc_rva, vector_iostream::RELOC_OP::ADD);
+  }
+  for (const auto& [data, offset] : ctx.data_fixups) {
+    data->set_rva(rsrc_rva + offset);
   }
 
   rsrc_stream.move(rsrc_data_);
@@ -464,14 +508,26 @@ ok_error_t Builder::construct_resource(vector_iostream& ios,
       "[rsrc] writing directory header at {:#06x} (depth={}, id={}, #children={})",
       ctx.offset_header, dir.depth(), dir.id(), dir.childs().size()
   );
+  uint16_t nb_name_entries = 0;
+  uint16_t nb_id_entries = 0;
+  for (const ResourceNode& child : dir.childs()) {
+    if (child.has_name() || !child.name().empty()) {
+      ++nb_name_entries;
+    } else {
+      ++nb_id_entries;
+    }
+  }
+  dir.numberof_name_entries(nb_name_entries);
+  dir.numberof_id_entries(nb_id_entries);
+
   ios.seekp(ctx.offset_header)
       .increase_capacity(sizeof(details::pe_resource_directory_table))
       .write<uint32_t>(dir.characteristics())
       .write<uint32_t>(dir.time_date_stamp())
       .write<uint16_t>(dir.major_version())
       .write<uint16_t>(dir.minor_version())
-      .write<uint16_t>(dir.numberof_name_entries())
-      .write<uint16_t>(dir.numberof_id_entries());
+      .write<uint16_t>(nb_name_entries)
+      .write<uint16_t>(nb_id_entries);
   ctx.offset_header = ios.tellp();
 
   uint32_t current_offset = ctx.offset_header;
@@ -529,6 +585,7 @@ ok_error_t Builder::construct_resource(vector_iostream& ios, ResourceData& data,
       .write(content.data(), content.size())
       .align(sizeof(uint32_t));
 
+  ctx.data_fixups.emplace_back(&data, ctx.offset_data);
   ctx.offset_data = ios.tellp();
   return ok();
 }

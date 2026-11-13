@@ -224,6 +224,20 @@ void create<Binary>(nb::module_& m) {
           nb::keep_alive<0, 1>()
       )
 
+      .def_prop_ro(
+          "signature_data",
+          [](const Binary& bin) { return nb::to_bytes(bin.signature_data()); },
+          R"doc(
+          Raw certificate table of the original binary.
+
+          This data is kept when the resource tree is modified so it can be
+          compared with the original Authenticode signature.
+          )doc"_doc)
+
+      .def("remove_signatures", &Binary::remove_signatures,
+           "Remove the Authenticode signature from this binary"_doc,
+           nb::lock_self())
+
       .def(
           "authentihash",
           [](const Binary& bin, ALGORITHMS algo) {

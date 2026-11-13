@@ -65,6 +65,15 @@ void create<ResourceData>(nb::module_& m) {
                        This value can change when re-building the resource table
                    )delim"_doc)
 
+      .def_prop_ro("rva", &ResourceData::rva,
+                   R"delim(
+                   RVA of the resource data
+
+                   .. warning::
+
+                       This value can change when re-building the resource table
+                   )delim"_doc)
+
       .LIEF_DEFAULT_STR(ResourceData);
 }
 }

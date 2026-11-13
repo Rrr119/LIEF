@@ -583,6 +583,53 @@ ResourceNode* Binary::set_resources(std::unique_ptr<ResourceNode> root) {
   return resources_.get();
 }
 
+std::vector<uint8_t> Binary::signature_data() const {
+  const DataDirectory* cert = cert_dir();
+  if (cert != nullptr && cert->RVA() > 0 && cert->size() > 0 &&
+      cert->RVA() >= overlay_offset_)
+  {
+    const uint64_t start = cert->RVA() - overlay_offset_;
+    const uint64_t end = start + cert->size();
+    if (end <= overlay_.size()) {
+      return {overlay_.begin() + start, overlay_.begin() + end};
+    }
+  }
+
+  std::vector<uint8_t> raw;
+  for (const Signature& signature : signatures_) {
+    span<const uint8_t> der = signature.raw_der();
+    raw.insert(raw.end(), der.begin(), der.end());
+  }
+  return raw;
+}
+
+bool Binary::remove_signatures() {
+  bool removed = false;
+  DataDirectory* cert = cert_dir();
+  if (cert != nullptr && cert->RVA() > 0 && cert->size() > 0 &&
+      cert->RVA() >= overlay_offset_)
+  {
+    const uint64_t start = cert->RVA() - overlay_offset_;
+    const uint64_t end = start + cert->size();
+    if (end <= overlay_.size()) {
+      overlay_.erase(overlay_.begin() + start, overlay_.begin() + end);
+      removed = true;
+    }
+  }
+
+  if (cert != nullptr && (cert->RVA() != 0 || cert->size() != 0)) {
+    cert->RVA(0);
+    cert->size(0);
+    removed = true;
+  }
+
+  if (!signatures_.empty()) {
+    signatures_.clear();
+    removed = true;
+  }
+  return removed;
+}
+
 uint32_t Binary::compute_checksum() const {
   const size_t sizeof_ptr =
       type_ == PE_TYPE::PE32 ? sizeof(uint32_t) : sizeof(uint64_t);
@@ -1193,7 +1240,7 @@ result<ResourcesManager> Binary::resources_manager() const {
   if (resources_ == nullptr) {
     return make_error_code(lief_errors::not_found);
   }
-  return *resources_;
+  return ResourcesManager(*resources_, const_cast<Binary&>(*this));
 }
 
 LIEF::Binary::functions_t Binary::ctor_functions() const {

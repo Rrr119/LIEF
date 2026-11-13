@@ -354,6 +354,19 @@ class LIEF_API Binary : public LIEF::Binary {
     return signatures_;
   }
 
+  /// Raw certificate table of the original binary.
+  ///
+  /// This value is preserved when the resource tree is modified and can be
+  /// used to compare the original Authenticode signature with the rebuilt
+  /// binary.
+  std::vector<uint8_t> signature_data() const;
+
+  /// Remove the Authenticode signature from this binary.
+  ///
+  /// The certificate table and the parsed signatures are dropped. Save
+  /// :meth:`signature_data` first if the original signature needs to be kept.
+  bool remove_signatures();
+
   /// Verify the binary against the embedded signature(s) (if any)
   /// First, it checks that the embedded signatures are correct (c.f.
   /// Signature::check) and then, it checks that the authentihash matches

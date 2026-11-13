@@ -572,6 +572,11 @@
     :py:attr:`lief.PE.Binary.signatures`
     :cpp:func:`LIEF::PE::Binary::signatures`
 
+.. |lief-pe-binary-signature_data| lief-api:: lief.PE.Binary.signature_data
+
+    :py:attr:`lief.PE.Binary.signature_data`
+    :cpp:func:`LIEF::PE::Binary::signature_data`
+
 .. |lief-pe-binary-is_arm64ec| lief-api:: lief.PE.Binary.is_arm64ec()
 
     :rust:method:`lief::pe::Binary::is_arm64ec [struct]`

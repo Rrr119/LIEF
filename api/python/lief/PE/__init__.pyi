@@ -1647,7 +1647,11 @@ class FPO(Debug):
     def entries(self) -> FPO.it_entries: ...
 
 class ResourcesManager(lief.Object):
+    @overload
     def __init__(self, node: ResourceNode) -> None: ...
+
+    @overload
+    def __init__(self, node: ResourceNode, binary: Binary) -> None: ...
 
     class it_const_dialogs:
         def __getitem__(self, arg: int, /) -> ResourceDialog: ...
@@ -1682,6 +1686,25 @@ class ResourcesManager(lief.Object):
         id: int
 
         def __str__(self) -> str: ...
+
+    class entry_t:
+        type: int
+
+        type_name: str
+
+        name: str
+
+        name_id: int
+
+        language: int
+
+        size: int
+
+        rva: int
+
+        code_page: int
+
+        path: str
 
     class TYPE(enum.Enum):
         @staticmethod
@@ -1791,6 +1814,27 @@ class ResourcesManager(lief.Object):
 
     def get_node_type(self, type: ResourcesManager.TYPE) -> ResourceNode | None: ...
 
+    @property
+    def has_signatures(self) -> bool: ...
+
+    @property
+    def original_signature_data(self) -> bytes: ...
+
+    def has_path(self, path: str) -> bool: ...
+
+    @property
+    def entries(self) -> list[ResourcesManager.entry_t]: ...
+
+    def list(self) -> list[ResourcesManager.entry_t]: ...
+
+    def export(self, path: str) -> bytes: ...
+
+    def replace(self, path: str, data: bytes | str | Sequence[int]) -> bool: ...
+
+    def add(self, path: str, data: bytes | str | Sequence[int]) -> bool: ...
+
+    def remove(self, path: str) -> bool: ...
+
     def print(self, max_depth: int = 0) -> str: ...
 
     def __str__(self) -> str: ...
@@ -1862,6 +1906,9 @@ class ResourceData(ResourceNode):
 
     @property
     def offset(self) -> int: ...
+
+    @property
+    def rva(self) -> int: ...
 
     def __str__(self) -> str: ...
 
@@ -4749,6 +4796,11 @@ class Binary(lief.Binary):
     @property
     def signatures(self) -> Binary.it_const_signatures: ...
 
+    @property
+    def signature_data(self) -> bytes: ...
+
+    def remove_signatures(self) -> bool: ...
+
     def authentihash(self, algorithm: ALGORITHMS) -> bytes: ...
 
     @overload
@@ -4943,6 +4995,8 @@ class Builder:
         debug: bool
 
         dos_stub: bool
+
+        recompute_checksum: bool
 
         rsrc_section: str
 

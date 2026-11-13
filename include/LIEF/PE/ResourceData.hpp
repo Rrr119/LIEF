@@ -88,6 +88,13 @@ class LIEF_API ResourceData : public ResourceNode {
     return offset_;
   }
 
+  /// RVA of the content within the PE image
+  ///
+  /// @warning This value may change when rebuilding resource table
+  uint32_t rva() const {
+    return rva_;
+  }
+
   void code_page(uint32_t code_page) {
     code_page_ = code_page;
   }
@@ -123,6 +130,11 @@ class LIEF_API ResourceData : public ResourceNode {
     offset_ = offset;
   }
 
+  /// @private
+  LIEF_LOCAL void set_rva(uint32_t rva) {
+    rva_ = rva;
+  }
+
   static bool classof(const ResourceNode* node) {
     return node->is_data();
   }
@@ -134,6 +146,7 @@ class LIEF_API ResourceData : public ResourceNode {
   uint32_t code_page_ = 0;
   uint32_t reserved_ = 0;
   uint32_t offset_ = 0;
+  uint32_t rva_ = 0;
 };
 
 }

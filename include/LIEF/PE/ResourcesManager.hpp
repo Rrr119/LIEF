@@ -15,11 +15,14 @@
  */
 #ifndef LIEF_PE_RESOURCES_MANAGER_H
 #define LIEF_PE_RESOURCES_MANAGER_H
+#include <cstdint>
 #include <string_view>
 #include <ostream>
 #include <sstream>
+#include <vector>
 
 #include "LIEF/Object.hpp"
+#include "LIEF/errors.hpp"
 #include "LIEF/iterators.hpp"
 #include "LIEF/visibility.h"
 
@@ -33,6 +36,8 @@ class VectorStream;
 
 namespace PE {
 class ResourceNode;
+class ResourceData;
+class Binary;
 
 /// The Resource Manager provides an enhanced API to manipulate the resource tree.
 class LIEF_API ResourcesManager : public Object {
@@ -98,13 +103,51 @@ class LIEF_API ResourcesManager : public Object {
 
   using strings_table_t = std::vector<string_entry_t>;
 
+  /// Description of a resource data node in the resource tree
+  struct LIEF_API entry_t {
+    /// Numeric resource type (e.g. ``3`` for ``RT_ICON``)
+    uint32_t type = 0;
+
+    /// Human-readable resource type (e.g. ``ICON``)
+    std::string type_name;
+
+    /// Name of the resource (empty if the node is identified by an ID)
+    std::string name;
+
+    /// Numeric ID of the resource name
+    uint32_t name_id = 0;
+
+    /// Language ID of the resource data
+    uint32_t language = 0;
+
+    /// Size of the resource data
+    uint64_t size = 0;
+
+    /// RVA of the resource data
+    uint32_t rva = 0;
+
+    /// Code page associated with the resource data
+    uint32_t code_page = 0;
+
+    /// Path that can be used with :meth:`export`, :meth:`replace` and
+    /// :meth:`remove` (e.g. ``ICON/1/1033``)
+    std::string path;
+  };
+
+  using entries_t = std::vector<entry_t>;
+
   ResourcesManager() = delete;
   ResourcesManager(ResourceNode& rsrc) :
     resources_{&rsrc} {}
 
+  ResourcesManager(ResourceNode& rsrc, Binary& binary) :
+    resources_{&rsrc},
+    binary_{&binary} {}
+
   ResourcesManager(const ResourcesManager& other) :
     Object(other),
-    resources_(other.resources_)
+    resources_(other.resources_),
+    binary_(other.binary_)
   // Skip (on purpose) the `dialogs_` cache
   {}
 
@@ -112,6 +155,7 @@ class LIEF_API ResourcesManager : public Object {
     if (&other != this) {
       Object::operator=(other);
       resources_ = other.resources_;
+      binary_ = other.binary_;
       // Skip (on purpose) the `dialogs_` cache
     }
     return *this;
@@ -209,6 +253,53 @@ class LIEF_API ResourcesManager : public Object {
   /// Print the resource tree to the given depth
   std::string print(uint32_t depth = 0) const;
 
+  /// Describe every resource data node in depth-first order
+  entries_t entries() const;
+
+  /// Alias for :meth:`entries`
+  entries_t list() const {
+    return entries();
+  }
+
+  /// Export the content of the resource at the given path.
+  ///
+  /// The path is a ``/``-separated sequence of type, name and language
+  /// identifiers. Each component can be a decimal/hexadecimal ID or the
+  /// corresponding resource name. For example, the following paths identify
+  /// the same icon:
+  ///
+  /// * ``3/1/1033``
+  /// * ``ICON/1/1033``
+  /// * ``RT_ICON/1/1033``
+  result<std::vector<uint8_t>> extract(std::string_view path) const;
+
+  /// Replace the resource at the given path.
+  ///
+  /// If the path does not exist, the intermediate directories and the final
+  /// data node are created. This makes :meth:`replace` suitable for adding a
+  /// new resource as well.
+  bool replace(std::string_view path, std::vector<uint8_t> content);
+
+  /// Add a new resource at the given path.
+  ///
+  /// Unlike :meth:`replace`, this method fails if the path already exists.
+  bool add(std::string_view path, std::vector<uint8_t> content);
+
+  /// Remove the resource or directory at the given path
+  bool remove(std::string_view path);
+
+  /// Check if the given resource path exists
+  bool has_path(std::string_view path) const;
+
+  /// ``True`` if the underlying binary is signed
+  bool has_signatures() const;
+
+  /// Raw certificate table of the original binary.
+  ///
+  /// The data remains available after the resource tree is modified so it can
+  /// be compared with the original Authenticode signature.
+  std::vector<uint8_t> original_signature_data() const;
+
   void accept(Visitor& visitor) const override;
 
   LIEF_API friend std::ostream& operator<<(std::ostream& os,
@@ -219,7 +310,18 @@ class LIEF_API ResourcesManager : public Object {
                   uint32_t current_depth, uint32_t max_depth,
                   const ResourceNode* parent = nullptr, std::string header = "",
                   bool is_last = false) const;
+
+  ResourceNode* find_node(std::string_view path) const;
+  ResourceData* find_data(std::string_view path) const;
+  ResourceNode* create_path(std::string_view path,
+                            const std::vector<uint8_t>* content);
+  void notify_signature_invalidated() const;
+  void collect_entries(const ResourceNode& node, std::vector<uint32_t>& ids,
+                       std::vector<std::string>& names, entries_t& out) const;
+
   ResourceNode* resources_ = nullptr;
+  Binary* binary_ = nullptr;
+  mutable bool signature_warned_ = false;
   mutable dialogs_t dialogs_;
 };
 

@@ -87,6 +87,82 @@ manifest:
 :::
 ::::
 
+## Path-based Resource Editing
+
+The {sub-ref}`lief-pe-resource-manager` can also address resources by a
+`type/name/language` path. Type and name components accept numeric IDs or
+resource names, and the type accepts the usual names and aliases
+(`ICON`, `RT_ICON`, `MANIFEST`, `RT_MANIFEST`, ...). This makes it possible
+to export, replace, add, and remove entries without traversing the tree:
+
+::::{tabs}
+:::{tab} {fa}`brands fa-python` Python
+{{ literalinclude("../../../../code/python/pe_resources.py", "edit-resource") }}
+:::
+:::{tab} {fa}`regular fa-file-code` C++
+{{ literalinclude("../../../../code/cpp/pe_resources.cpp", "edit-resource") }}
+:::
+::::
+
+- `export(path)` returns the resource payload as `bytes`.
+- `replace(path, data)` replaces an existing data node or creates the
+  missing path.
+- `add(path, data)` is the same operation but fails if the path already
+  exists.
+- `remove(path)` deletes the matching node or subtree.
+- `entries` returns type, name, language, size, RVA, and path for every
+  data node.
+
+```python
+resources = pe.resources_manager
+
+for entry in resources.entries:
+    print(entry.type_name, entry.name, entry.language, entry.size, entry.rva)
+
+icon = resources.export("ICON/1/1033")
+resources.replace("ICON/1/1033", icon)
+resources.remove("MANIFEST/1/1033")
+```
+
+### Authenticode Signatures
+
+Changing resources invalidates an existing Authenticode signature. LIEF
+keeps the original certificate table available through
+{sub-ref}`lief-pe-binary-signature_data` and warns when a path-based
+modification is performed:
+
+{{ literalinclude("../../../../code/python/pe_resources.py", "preserve-signature") }}
+
+`Binary.remove_signatures()` drops the stale certificate table so the
+rebuilt PE is an explicitly unsigned binary. Save the original data first
+if it needs to be compared with a future signature.
+
+## Command-line Tool
+
+The `lief-pe-resource` tool exposes the same operations from the command
+line.
+
+```console
+# TYPE, NAME, LANGUAGE, SIZE, RVA, and PATH
+lief-pe-resource list app.exe
+
+# Export one resource; omit -o to write the raw payload to stdout
+lief-pe-resource export app.exe ICON/1/1033 -o icon.bin
+
+# Replace and rebuild
+lief-pe-resource replace app.exe ICON/1/1033 icon.bin -o app-patched.exe
+
+# Add or delete a resource
+lief-pe-resource add app.exe RCDATA/42/1033 payload.bin -o app-patched.exe
+lief-pe-resource remove app.exe MANIFEST/1/1033 -o app-patched.exe
+```
+
+The builder recomputes the PE checksum by default. For signed inputs,
+`lief-pe-resource` saves the original certificate table to
+`<output>.sig` (or the file passed to `--signature`), prints a warning,
+and writes the rebuilt PE without the invalid signature. Pass
+`--no-checksum` to keep the original checksum field.
+
 ## Resource Tree Transfer between Binaries
 
 LIEF can transfer the resource tree from one binary to another.

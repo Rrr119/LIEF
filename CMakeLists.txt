@@ -447,6 +447,10 @@ endif()
 
 add_subdirectory(api)
 
+if(LIEF_TOOLS)
+  add_subdirectory(tools)
+endif()
+
 if(LIEF_EXAMPLES)
   add_subdirectory(examples)
 endif()

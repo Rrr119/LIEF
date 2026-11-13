@@ -78,6 +78,13 @@ void create<Builder>(nb::module_& m) {
               )doc"_doc)
 
       .def_rw(
+          "recompute_checksum", &Builder::config_t::recompute_checksum,
+          R"doc(
+          Whether the builder should recompute the PE checksum and write it in
+          the optional header.
+          )doc"_doc)
+
+      .def_rw(
           "rsrc_section", &Builder::config_t::rsrc_section,
           R"doc(
           If the resources tree needs to be relocated, this attribute defines the

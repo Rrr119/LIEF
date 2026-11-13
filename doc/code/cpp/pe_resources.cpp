@@ -57,6 +57,28 @@ void set_manifest() {
   // lief-doc: manifest-end
 }
 
+void edit_resources() {
+  // lief-doc: edit-resource-start
+  std::unique_ptr<LIEF::PE::Binary> pe;
+
+  auto resources = pe->resources_manager();
+  if (!resources) {
+    return;
+  }
+
+  auto icon = resources->extract("ICON/1/1033");
+  if (!icon) {
+    return;
+  }
+
+  resources->replace("ICON/1/1033", *icon);
+  resources->replace("RCDATA/42/1033", {1, 2, 3});
+  resources->remove("RCDATA/42/1033");
+
+  pe->write("new.exe");
+  // lief-doc: edit-resource-end
+}
+
 void transfer_resources() {
   // lief-doc: transfer-start
   std::unique_ptr<LIEF::PE::Binary> from;

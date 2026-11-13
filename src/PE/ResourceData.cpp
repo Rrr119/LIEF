@@ -28,6 +28,8 @@ void ResourceData::swap(ResourceData& other) noexcept {
   std::swap(content_, other.content_);
   std::swap(code_page_, other.code_page_);
   std::swap(reserved_, other.reserved_);
+  std::swap(offset_, other.offset_);
+  std::swap(rva_, other.rva_);
 }
 
 void ResourceData::accept(Visitor& visitor) const {

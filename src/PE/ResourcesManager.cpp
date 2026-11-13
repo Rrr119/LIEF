@@ -15,8 +15,13 @@
  */
 #include "LIEF/Visitor.hpp"
 #include "LIEF/utils.hpp"
+#include <algorithm>
+#include <charconv>
+#include <cctype>
+#include <optional>
 #include <string_view>
 
+#include "LIEF/PE/Binary.hpp"
 #include "LIEF/PE/ResourceData.hpp"
 #include "LIEF/PE/ResourceDirectory.hpp"
 #include "LIEF/PE/ResourceNode.hpp"
@@ -51,6 +56,137 @@ static constexpr auto RESOURCE_TYPES = {
     ResourcesManager::TYPE::ANIICON,      ResourcesManager::TYPE::HTML,
     ResourcesManager::TYPE::MANIFEST,
 };
+
+namespace {
+
+std::string_view trim(std::string_view value) {
+  while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) {
+    value.remove_prefix(1);
+  }
+  while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) {
+    value.remove_suffix(1);
+  }
+  return value;
+}
+
+bool parse_u32(std::string_view value, uint32_t& out) {
+  value = trim(value);
+  if (!value.empty() && value.front() == '#') {
+    value.remove_prefix(1);
+  }
+  if (value.empty()) {
+    return false;
+  }
+
+  const bool is_hex = value.size() > 2 && value[0] == '0' &&
+                      (value[1] == 'x' || value[1] == 'X');
+  const auto begin = value.data() + (is_hex ? 2 : 0);
+  const auto end = value.data() + value.size();
+  uint32_t result = 0;
+  const auto res = std::from_chars(begin, end, result, is_hex ? 16 : 10);
+  if (res.ec != std::errc() || res.ptr != end) {
+    return false;
+  }
+  out = result;
+  return true;
+}
+
+std::optional<uint32_t> type_from_name(std::string_view value) {
+  value = trim(value);
+  std::string name{value};
+  std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+    return static_cast<char>(std::toupper(c));
+  });
+  if (name.size() > 3 && name.compare(0, 3, "RT_") == 0) {
+    name.erase(0, 3);
+  }
+  for (auto type : RESOURCE_TYPES) {
+    if (name == to_string(type)) {
+      return static_cast<uint32_t>(type);
+    }
+  }
+  return std::nullopt;
+}
+
+struct path_component_t {
+  bool is_named = false;
+  uint32_t id = 0;
+  std::string name;
+};
+
+std::vector<path_component_t> parse_path(std::string_view path) {
+  std::vector<path_component_t> components;
+  size_t start = 0;
+  while (start <= path.size()) {
+    const size_t sep = path.find('/', start);
+    const size_t end = sep == std::string_view::npos ? path.size() : sep;
+    std::string_view raw = trim(path.substr(start, end - start));
+    if (!raw.empty()) {
+      path_component_t component;
+      if (parse_u32(raw, component.id)) {
+        component.is_named = false;
+      } else {
+        auto type = components.empty() ? type_from_name(raw) : std::nullopt;
+        if (type) {
+          component.is_named = false;
+          component.id = *type;
+        } else {
+          component.is_named = true;
+          component.name = std::string(raw);
+        }
+      }
+      components.push_back(std::move(component));
+    }
+    if (sep == std::string_view::npos) {
+      break;
+    }
+    start = sep + 1;
+  }
+  return components;
+}
+
+bool matches(const ResourceNode& node, const path_component_t& component,
+             bool is_type) {
+  if (component.is_named) {
+    return !node.name().empty() && node.utf8_name() == component.name;
+  }
+
+  if (node.id() == component.id) {
+    return true;
+  }
+  if (is_type) {
+    return (node.id() & 0x7fffffffU) == component.id;
+  }
+  return false;
+}
+
+std::unique_ptr<ResourceNode> make_node(const path_component_t& component) {
+  if (component.is_named) {
+    auto node = std::make_unique<ResourceDirectory>();
+    node->id(0x80000000U);
+    node->name(component.name);
+    return node;
+  }
+  return std::make_unique<ResourceDirectory>(component.id);
+}
+
+ResourceData* first_data(ResourceNode& node) {
+  if (auto* data = node.cast<ResourceData>()) {
+    return data;
+  }
+  ResourceData* found = nullptr;
+  for (ResourceNode& child : node.childs()) {
+    if (auto* data = first_data(child); data != nullptr) {
+      if (found != nullptr) {
+        return nullptr;
+      }
+      found = data;
+    }
+  }
+  return found;
+}
+
+}
 
 std::string ResourcesManager::string_entry_t::string_u8() const {
   return u16tou8(string).value_or("");
@@ -584,6 +720,268 @@ std::string ResourcesManager::print(uint32_t depth) const {
   uint32_t current_depth = 0;
   print_tree(*resources_, oss, current_depth, depth);
   return oss.str();
+}
+
+ResourceNode* ResourcesManager::find_node(std::string_view path) const {
+  const auto components = parse_path(path);
+  if (components.empty()) {
+    return resources_;
+  }
+
+  ResourceNode* current = resources_;
+  for (size_t i = 0; i < components.size(); ++i) {
+    if (current == nullptr || !current->is_directory()) {
+      return nullptr;
+    }
+
+    ResourceNode* next = nullptr;
+    for (ResourceNode& child : current->childs()) {
+      if (matches(child, components[i], /*is_type=*/i == 0)) {
+        next = &child;
+        break;
+      }
+    }
+    if (next == nullptr) {
+      return nullptr;
+    }
+    current = next;
+  }
+  return current;
+}
+
+ResourceData* ResourcesManager::find_data(std::string_view path) const {
+  ResourceNode* node = find_node(path);
+  if (node == nullptr) {
+    return nullptr;
+  }
+  return first_data(*node);
+}
+
+result<std::vector<uint8_t>>
+    ResourcesManager::extract(std::string_view path) const {
+  const ResourceData* data = find_data(path);
+  if (data == nullptr) {
+    return make_error_code(lief_errors::not_found);
+  }
+
+  span<const uint8_t> content = data->content();
+  return std::vector<uint8_t>(content.begin(), content.end());
+}
+
+ResourceNode* ResourcesManager::create_path(
+    std::string_view path, const std::vector<uint8_t>* content) {
+  const auto components = parse_path(path);
+  if (components.empty() || resources_ == nullptr) {
+    return nullptr;
+  }
+
+  ResourceNode* current = resources_;
+  for (size_t i = 0; i + 1 < components.size(); ++i) {
+    ResourceNode* next = nullptr;
+    for (ResourceNode& child : current->childs()) {
+      if (matches(child, components[i], /*is_type=*/i == 0)) {
+        next = &child;
+        break;
+      }
+    }
+
+    if (next == nullptr) {
+      next = &current->add_child(make_node(components[i]));
+    }
+
+    if (!next->is_directory()) {
+      return nullptr;
+    }
+    current = next;
+  }
+
+  ResourceNode* existing = nullptr;
+  for (ResourceNode& child : current->childs()) {
+    if (matches(child, components.back(),
+                /*is_type=*/components.size() == 1)) {
+      existing = &child;
+      break;
+    }
+  }
+
+  if (existing != nullptr) {
+    if (content != nullptr && existing->is_data()) {
+      static_cast<ResourceData&>(*existing).content(*content);
+      return existing;
+    }
+    return nullptr;
+  }
+
+  std::unique_ptr<ResourceData> data;
+  if (content != nullptr) {
+    data = std::make_unique<ResourceData>(*content);
+  } else {
+    data = std::make_unique<ResourceData>();
+  }
+
+  const path_component_t& component = components.back();
+  if (component.is_named) {
+    data->id(0x80000000U);
+    data->name(component.name);
+  } else {
+    data->id(component.id);
+  }
+
+  return &current->add_child(std::move(data));
+}
+
+bool ResourcesManager::replace(std::string_view path,
+                               std::vector<uint8_t> content) {
+  if (ResourceData* data = find_data(path); data != nullptr) {
+    data->content(std::move(content));
+    notify_signature_invalidated();
+    return true;
+  }
+
+  if (create_path(path, &content) == nullptr) {
+    return false;
+  }
+  notify_signature_invalidated();
+  return true;
+}
+
+bool ResourcesManager::add(std::string_view path,
+                           std::vector<uint8_t> content) {
+  if (find_node(path) != nullptr) {
+    return false;
+  }
+  if (create_path(path, &content) == nullptr) {
+    return false;
+  }
+  notify_signature_invalidated();
+  return true;
+}
+
+bool ResourcesManager::remove(std::string_view path) {
+  const auto components = parse_path(path);
+  if (components.empty() || resources_ == nullptr) {
+    return false;
+  }
+
+  ResourceNode* parent = resources_;
+  for (size_t i = 0; i + 1 < components.size(); ++i) {
+    ResourceNode* next = nullptr;
+    for (ResourceNode& child : parent->childs()) {
+      if (matches(child, components[i], /*is_type=*/i == 0)) {
+        next = &child;
+        break;
+      }
+    }
+    if (next == nullptr || !next->is_directory()) {
+      return false;
+    }
+    parent = next;
+  }
+
+  ResourceNode* target = nullptr;
+  for (ResourceNode& child : parent->childs()) {
+    if (matches(child, components.back(),
+                /*is_type=*/components.size() == 1)) {
+      target = &child;
+      break;
+    }
+  }
+  if (target == nullptr) {
+    return false;
+  }
+
+  parent->delete_child(*target);
+  notify_signature_invalidated();
+  return true;
+}
+
+bool ResourcesManager::has_path(std::string_view path) const {
+  return find_node(path) != nullptr;
+}
+
+bool ResourcesManager::has_signatures() const {
+  return binary_ != nullptr && binary_->has_signatures();
+}
+
+std::vector<uint8_t> ResourcesManager::original_signature_data() const {
+  return binary_ == nullptr ? std::vector<uint8_t>{} : binary_->signature_data();
+}
+
+void ResourcesManager::notify_signature_invalidated() const {
+  if (binary_ == nullptr || !binary_->has_signatures() || signature_warned_) {
+    return;
+  }
+  LIEF_WARN("Modifying the resource tree invalidates the Authenticode "
+            "signature. The original certificate table is still available "
+            "through Binary::signature_data()");
+  signature_warned_ = true;
+}
+
+ResourcesManager::entries_t ResourcesManager::entries() const {
+  entries_t result;
+  std::vector<uint32_t> ids;
+  std::vector<std::string> names;
+  collect_entries(*resources_, ids, names, result);
+  return result;
+}
+
+void ResourcesManager::collect_entries(const ResourceNode& node,
+                                       std::vector<uint32_t>& ids,
+                                       std::vector<std::string>& names,
+                                       entries_t& out) const {
+  for (const ResourceNode& child : node.childs()) {
+    ids.push_back(child.id());
+    names.push_back(child.utf8_name());
+
+    if (const auto* data = child.cast<ResourceData>()) {
+      entry_t entry;
+      if (!ids.empty()) {
+        entry.type = ids[0];
+      }
+      if (!names.empty() && !names[0].empty()) {
+        entry.type_name = names[0];
+      } else if (!ids.empty()) {
+        const char* name = to_string(TYPE(ids[0]));
+        entry.type_name = name;
+      }
+
+      if (ids.size() > 1) {
+        entry.name_id = ids[1];
+      }
+      if (names.size() > 1) {
+        entry.name = names[1];
+      }
+      entry.language = ids.size() > 2 ? ids[2] : child.id();
+      entry.size = data->content().size();
+      entry.rva = data->rva();
+      entry.code_page = data->code_page();
+
+      std::ostringstream path;
+      for (size_t i = 0; i < ids.size(); ++i) {
+        if (i != 0) {
+          path << '/';
+        }
+        if (i == 0 && names[0].empty()) {
+          if (auto type = type_from_name(to_string(TYPE(ids[0])))) {
+            path << to_string(TYPE(*type));
+          } else {
+            path << ids[0];
+          }
+        } else if (!names[i].empty()) {
+          path << names[i];
+        } else {
+          path << ids[i];
+        }
+      }
+      entry.path = path.str();
+      out.push_back(std::move(entry));
+    } else {
+      collect_entries(child, ids, names, out);
+    }
+
+    ids.pop_back();
+    names.pop_back();
+  }
 }
 
 void ResourcesManager::print_tree(const ResourceNode& node,

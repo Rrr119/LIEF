@@ -85,6 +85,10 @@ class LIEF_API Builder {
     /// header)
     bool dos_stub = true;
 
+    /// Whether the builder should recompute the PE checksum and write it in
+    /// the optional header
+    bool recompute_checksum = true;
+
     /// If the resources tree needs to be relocated, this defines the name of
     /// the new section that contains the relocated tree
     std::string rsrc_section = ".rsrc";
@@ -155,6 +159,8 @@ class LIEF_API Builder {
   template<typename PE_T>
   ok_error_t build_load_config();
 
+  ok_error_t recompute_checksum();
+
   const std::vector<uint8_t>& rsrc_data() const {
     return rsrc_data_;
   }
@@ -177,6 +183,7 @@ class LIEF_API Builder {
     uint32_t offset_name = 0;
     uint32_t depth = 0;
     std::vector<uint64_t> rva_fixups;
+    std::vector<std::pair<ResourceData*, uint32_t>> data_fixups;
   };
 
   template<typename PE_T>

@@ -74,6 +74,11 @@
 
 :PE:
 
+  * Add path-based resource editing with ``ResourcesManager.extract``,
+    ``ResourcesManager.replace``, and ``ResourcesManager.remove``, plus the
+    ``lief-pe-resource`` command-line tool. Resource data now exposes its RVA,
+    the builder can recompute the PE checksum, and the original certificate
+    table remains available through ``Binary.signature_data``.
   * Fix the parsing of the base relocations of the first page of the PE image
   * Fix the UTF-8 conversion of the resource strings (e.g. the names of
     |lief-pe-resource-node|) and of the Authenticode program names: the

@@ -169,6 +169,7 @@ std::unique_ptr<ResourceNode> TreeParser::parse_resource_node(
         node->set_depth(depth + 1);
         node->id(id);
         node->set_offset(*content_offset);
+        node->set_rva(data_entry->DataRVA);
         if (name) {
           node->name(*name);
         }
