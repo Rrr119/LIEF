@@ -27,6 +27,7 @@
 #include "LIEF/PE/Import.hpp"
 #include "LIEF/PE/OptionalHeader.hpp"
 #include "LIEF/PE/ResourcesManager.hpp"
+#include "LIEF/PE/signature/Authenticode.hpp"
 #include "LIEF/PE/signature/Signature.hpp"
 
 #include "LIEF/COFF/String.hpp"
@@ -60,6 +61,7 @@ class LIEF_API Binary : public LIEF::Binary {
   friend class Parser;
   friend class Builder;
   friend class Factory;
+  friend class Authenticode;
 
   public:
   /// Internal container for storing PE's Section
@@ -353,6 +355,36 @@ class LIEF_API Binary : public LIEF::Binary {
   it_signatures signatures() LIEF_LIFETIMEBOUND {
     return signatures_;
   }
+
+  /// Return ``True`` if the binary contains a non-empty certificate table.
+  ///
+  /// Unlike has_signatures(), this property also reports corrupted signatures
+  /// that could not be parsed.
+  bool has_signature() const {
+    const DataDirectory* dir = cert_dir();
+    return dir != nullptr && (dir->RVA() != 0 || dir->size() != 0);
+  }
+
+  /// Remove the Authenticode signature and rebuild a consistent certificate
+  /// directory and overlay.
+  ///
+  /// @return ``True`` if a signature was actually removed.
+  bool remove_signature();
+
+  /// Alias for remove_signature().
+  bool strip_signature() {
+    return remove_signature();
+  }
+
+  /// Extract the embedded PKCS #7, certificate chain, timestamps, and the
+  /// intervals covered by the Authenticode hash.
+  result<Authenticode::extracted_t> extract_signature() const;
+
+  /// Return the intervals covered by the Authenticode hash.
+  Authenticode::ranges_t authenticode_ranges() const;
+
+  /// Sign this binary with the given Authenticode configuration.
+  ok_error_t sign(const Authenticode::signing_config_t& config);
 
   /// Verify the binary against the embedded signature(s) (if any)
   /// First, it checks that the embedded signatures are correct (c.f.
@@ -977,6 +1009,9 @@ class LIEF_API Binary : public LIEF::Binary {
   int32_t available_sections_space_ = 0;
 
   signatures_t signatures_;
+  std::vector<uint8_t> authenticode_blob_;
+  bool signature_parse_error_ = false;
+  bool update_checksum_ = false;
   sections_t sections_;
   data_directories_t data_directories_;
   symbols_t symbols_;

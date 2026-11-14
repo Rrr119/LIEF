@@ -1,5 +1,6 @@
 target_sources(pyLIEF PRIVATE
   pyAttribute.cpp
+  pyAuthenticode.cpp
   pyContentInfo.cpp
   pyGenericContent.cpp
   pyPKCS9TSTInfo.cpp

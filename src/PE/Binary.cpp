@@ -176,6 +176,22 @@ void Binary::remove_tls() {
   tls_.reset(nullptr);
 }
 
+bool Binary::remove_signature() {
+  return Authenticode::strip(*this);
+}
+
+result<Authenticode::extracted_t> Binary::extract_signature() const {
+  return Authenticode::extract(*this);
+}
+
+Authenticode::ranges_t Binary::authenticode_ranges() const {
+  return Authenticode::ranges(*this);
+}
+
+ok_error_t Binary::sign(const Authenticode::signing_config_t& config) {
+  return Authenticode::sign(*this, config);
+}
+
 result<uint64_t> Binary::offset_to_virtual_address(uint64_t offset,
                                                    uint64_t slide) const {
   const uint64_t imagebase = slide > 0 ? slide : optional_header().imagebase();
@@ -712,6 +728,9 @@ uint32_t Binary::compute_checksum() const {
   }
   if (!overlay_.empty()) {
     cs.write(overlay());
+  }
+  if (!authenticode_blob_.empty()) {
+    cs.write(authenticode_blob_);
   }
   return cs.finalize();
 }

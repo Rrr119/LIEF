@@ -3638,6 +3638,9 @@ class MsCounterSign(Attribute):
     def content_info(self) -> ContentInfo: ...
 
     @property
+    def raw_token(self) -> memoryview: ...
+
+    @property
     def certificates(self) -> MsCounterSign.it_const_crt: ...
 
     @property
@@ -4572,6 +4575,99 @@ class LoadConfiguration(lief.Object):
 
     def __str__(self) -> str: ...
 
+class Authenticode:
+    class range_t:
+        def __init__(self) -> None: ...
+
+        start: int
+
+        end: int
+
+        @property
+        def size(self) -> int: ...
+
+    class timestamp_t:
+        def __init__(self) -> None: ...
+
+        protocol: str
+
+        token: list[int]
+
+        certificates: list[x509]
+
+        signers: list[SignerInfo]
+
+    class extracted_t:
+        def __init__(self) -> None: ...
+
+        present: bool
+
+        corrupted: bool
+
+        table_offset: int
+
+        table_size: int
+
+        signatures: list[Signature]
+
+        pkcs7: list[int]
+
+        pkcs7_list: list[list[int]]
+
+        certificates: list[x509]
+
+        timestamps: list[Authenticode.timestamp_t]
+
+        ranges: list[Authenticode.range_t]
+
+        def __bool__(self) -> bool: ...
+
+    class signing_config_t:
+        def __init__(self) -> None: ...
+
+        certificate: str
+
+        private_key: str
+
+        private_key_password: str
+
+        certificate_chain: list[str]
+
+        digest_algorithm: ALGORITHMS
+
+        timestamp_digest_algorithm: ALGORITHMS
+
+        timestamp_token: list[int]
+
+        timestamp_callback: Callable[[bytes], bytes] | None
+
+        program_name: str
+
+        more_info: str
+
+        include_signing_time: bool
+
+        signing_time: list[int]
+
+        commercial: bool
+
+        builder_config: Builder.config_t
+
+    @staticmethod
+    def extract(binary: Binary) -> Union[Authenticode.extracted_t, lief.lief_errors]: ...
+
+    @staticmethod
+    def ranges(binary: Binary) -> list[Authenticode.range_t]: ...
+
+    @staticmethod
+    def strip(binary: Binary) -> bool: ...
+
+    @staticmethod
+    def sign(binary: Binary, config: Authenticode.signing_config_t) -> bool: ...
+
+    @staticmethod
+    def timestamp_token_from_response(response: Sequence[int]) -> Union[bytes, lief.lief_errors]: ...
+
 class Binary(lief.Binary):
     class it_section:
         def __getitem__(self, arg: int, /) -> Section: ...
@@ -4736,6 +4832,36 @@ class Binary(lief.Binary):
 
     @property
     def has_signatures(self) -> bool: ...
+
+    @property
+    def has_signature(self) -> bool: ...
+
+    def remove_signature(self) -> bool: ...
+
+    def strip_signature(self) -> bool: ...
+
+    def extract_signature(self) -> Union[Authenticode.extracted_t, lief.lief_errors]: ...
+
+    @property
+    def authenticode_ranges(self) -> list[Authenticode.range_t]: ...
+
+    def sign(self, config: Authenticode.signing_config_t) -> bool: ...
+
+    @overload
+    def sign(
+        self,
+        certificate: str,
+        private_key: str,
+        digest_algorithm: ALGORITHMS = ALGORITHMS.SHA_256,
+        certificate_chain: list[str] = [],
+        private_key_password: str = "",
+        program_name: str = "",
+        more_info: str = "",
+        include_signing_time: bool = False,
+        commercial: bool = False,
+        timestamp_token: bytes = b"",
+        timestamp_callback: Callable[[bytes], bytes] | None = None,
+    ) -> bool: ...
 
     @property
     def is_reproducible_build(self) -> bool: ...

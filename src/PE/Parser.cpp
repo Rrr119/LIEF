@@ -1255,6 +1255,8 @@ ok_error_t Parser::parse_signature() {
   const uint32_t signature_size = cert_dir->size();
   const uint64_t end_p = signature_offset + signature_size;
 
+  binary_->signature_parse_error_ = false;
+
   LIEF_DEBUG("Signature Offset: {:#06x}", signature_offset);
   LIEF_DEBUG("Signature Size:   {:#06x}", signature_size);
 
@@ -1274,6 +1276,7 @@ ok_error_t Parser::parse_signature() {
 
     if (length <= SIZEOF_HEADER) {
       LIEF_WARN("Signature appears corrupted");
+      binary_->signature_parse_error_ = true;
       break;
     }
 
@@ -1297,6 +1300,7 @@ ok_error_t Parser::parse_signature() {
     std::vector<uint8_t> raw_signature;
     if (!stream_->read_data(raw_signature, length - SIZEOF_HEADER)) {
       LIEF_INFO("Failed to read {:#x} bytes", length);
+      binary_->signature_parse_error_ = true;
       break;
     }
 
@@ -1304,6 +1308,7 @@ ok_error_t Parser::parse_signature() {
       binary_->signatures_.push_back(std::move(*sign));
     } else {
       LIEF_INFO("Failed to parse signature");
+      binary_->signature_parse_error_ = true;
     }
     stream_->align(8);
     if (stream_->pos() <= current_p) {

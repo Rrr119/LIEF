@@ -1112,6 +1112,9 @@ result<std::unique_ptr<Attribute>>
    *
    */
   auto counter_sig = std::make_unique<MsCounterSign>();
+  if (SpanStream::classof(stream)) {
+    counter_sig->raw_token_ = static_cast<SpanStream&>(stream).content();
+  }
   ASN1Reader asn1r(stream);
   auto tag = asn1r.read_tag(MBEDTLS_ASN1_CONSTRUCTED | MBEDTLS_ASN1_SEQUENCE);
   if (!tag) {

@@ -67,6 +67,7 @@
   #include "LIEF/PE/resources/ResourceVersion.hpp"
 
   #include "LIEF/PE/signature/Attribute.hpp"
+  #include "LIEF/PE/signature/Authenticode.hpp"
   #include "LIEF/PE/signature/ContentInfo.hpp"
   #include "LIEF/PE/signature/GenericContent.hpp"
   #include "LIEF/PE/signature/OIDToString.hpp"

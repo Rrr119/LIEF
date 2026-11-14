@@ -37,6 +37,7 @@
 #include "LIEF/PE/debug/Repro.hpp"
 #include "LIEF/PE/debug/VCFeature.hpp"
 #include "LIEF/PE/resources/langs.hpp"
+#include "LIEF/PE/signature/Authenticode.hpp"
 #include "LIEF/PE/signature/GenericContent.hpp"
 #include "LIEF/PE/signature/PKCS9TSTInfo.hpp"
 #include "LIEF/PE/signature/SpcIndirectData.hpp"
@@ -82,6 +83,7 @@ void init_debug(nb::module_& m) {
 }
 
 void init_signature(nb::module_& m) {
+  CREATE(Authenticode, m);
   CREATE(Signature, m);
   CREATE(RsaInfo, m);
   CREATE(x509, m);

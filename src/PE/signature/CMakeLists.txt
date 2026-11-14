@@ -1,5 +1,6 @@
 target_sources(LIB_LIEF PRIVATE
   Attribute.cpp
+  Authenticode.cpp
   ContentInfo.cpp
   GenericContent.cpp
   OIDToString.cpp

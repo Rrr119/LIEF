@@ -18,6 +18,7 @@
 
 #include "LIEF/PE/signature/attributes/MsCounterSign.hpp"
 
+#include "nanobind/utils.hpp"
 #include <nanobind/stl/string.h>
 
 namespace LIEF::PE::py {
@@ -36,6 +37,13 @@ void create<MsCounterSign>(nb::module_& m) {
   CounterSig.def_prop_ro("version", &MsCounterSign::version)
       .def_prop_ro("digest_algorithm", &MsCounterSign::digest_algorithm)
       .def_prop_ro("content_info", &MsCounterSign::content_info)
+      .def_prop_ro(
+          "raw_token",
+          [](const MsCounterSign& self) {
+            return nb::to_memoryview(self.raw_token());
+          },
+          "Raw DER encoded TimeStampToken"_doc
+      )
       .def_prop_ro(
           "certificates", nb::overload_cast<>(&MsCounterSign::certificates),
           "Return an iterator over :class:`~lief.PE.x509` certificates"_doc,

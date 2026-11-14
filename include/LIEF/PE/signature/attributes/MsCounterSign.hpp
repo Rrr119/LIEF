@@ -82,6 +82,11 @@ class LIEF_API MsCounterSign : public Attribute {
     return content_info_;
   }
 
+  /// Raw DER encoded TimeStampToken (a CMS ``ContentInfo``).
+  span<const uint8_t> raw_token() const LIEF_LIFETIMEBOUND {
+    return raw_token_;
+  }
+
   std::string print() const override;
 
   void accept(Visitor& visitor) const override;
@@ -98,6 +103,7 @@ class LIEF_API MsCounterSign : public Attribute {
   ContentInfo content_info_;
   certificates_t certificates_;
   std::vector<SignerInfo> signers_;
+  std::vector<uint8_t> raw_token_;
 };
 
 }

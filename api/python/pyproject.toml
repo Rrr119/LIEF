@@ -20,6 +20,9 @@ classifiers = [
 ]
 dynamic = ["version", "readme"]
 
+[project.scripts]
+lief-authenticode = "lief.authenticode:main"
+
 [tool.scikit-build]
 cmake.version = ">=3.24"
 

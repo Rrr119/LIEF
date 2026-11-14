@@ -26,10 +26,12 @@
 #include "LIEF/PE/RichHeader.hpp"
 #include "LIEF/PE/Section.hpp"
 #include "LIEF/PE/TLS.hpp"
+#include "LIEF/PE/signature/Authenticode.hpp"
 #include <string_view>
 #include <nanobind/stl/string_view.h>
 
 #include "PE/pyPE.hpp"
+#include "PE/objects/signature/pyAuthenticode.hpp"
 
 #include "pyErr.hpp"
 #include "pyIterator.hpp"
@@ -222,6 +224,102 @@ void create<Binary>(nb::module_& m) {
           "signatures", nb::overload_cast<>(&Binary::signatures, nb::const_),
           "Return an iterator over the :class:`~lief.PE.Signature` objects"_doc,
           nb::keep_alive<0, 1>()
+      )
+
+      .def_prop_ro(
+          "has_signature", &Binary::has_signature,
+          R"doc(
+          ``True`` if the binary has a non-empty certificate table.
+
+          Unlike :attr:`has_signatures`, this also reports corrupted signatures.
+          )doc"_doc
+      )
+
+      .def(
+          "remove_signature", &Binary::remove_signature,
+          R"doc(
+          Remove the Authenticode signature and rebuild the certificate
+          directory and overlay. Returns ``True`` if a signature was removed.
+          )doc"_doc,
+          nb::lock_self()
+      )
+
+      .def(
+          "strip_signature", &Binary::strip_signature,
+          "Alias for :meth:`remove_signature`"_doc, nb::lock_self()
+      )
+
+      .def(
+          "extract_signature",
+          [](const Binary& self) {
+            return LIEF::py::error_or(&Binary::extract_signature, self);
+          },
+          R"doc(
+          Export the PKCS #7 blobs, certificate chain, timestamps, and the
+          intervals covered by the Authenticode hash.
+          )doc"_doc
+      )
+
+      .def_prop_ro(
+          "authenticode_ranges", &Binary::authenticode_ranges,
+          "Intervals covered by the Authenticode hash"_doc
+      )
+
+      .def(
+          "sign",
+          [](Binary& self, const Authenticode::signing_config_t& config) {
+            return bool(Authenticode::sign(self, config));
+          },
+          "Sign the binary with an :class:`~lief.PE.Authenticode.signing_config_t`"_doc,
+          "config"_a, nb::lock_self()
+      )
+
+      .def(
+          "sign",
+          [](Binary& self, const std::string& certificate,
+             const std::string& private_key, ALGORITHMS digest_algorithm,
+             const std::vector<std::string>& certificate_chain,
+             const std::string& private_key_password,
+             const std::string& program_name, const std::string& more_info,
+             bool include_signing_time, bool commercial, nb::bytes timestamp_token,
+             nb::object timestamp_callback) {
+            Authenticode::signing_config_t config;
+            config.certificate = certificate;
+            config.private_key = private_key;
+            config.digest_algorithm = digest_algorithm;
+            config.certificate_chain = certificate_chain;
+            config.private_key_password = private_key_password;
+            config.program_name = program_name;
+            config.more_info = more_info;
+            config.include_signing_time = include_signing_time;
+            config.commercial = commercial;
+
+            if (timestamp_token.size() > 0) {
+              const auto* data =
+                  reinterpret_cast<const uint8_t*>(timestamp_token.data());
+              config.timestamp_token.assign(data, data + timestamp_token.size());
+            }
+            if (!timestamp_callback.is_none()) {
+              config.timestamp_callback =
+                  to_timestamp_callback(timestamp_callback);
+            }
+            return bool(Authenticode::sign(self, config));
+          },
+          R"doc(
+          Sign the binary with a PEM/DER certificate and private key.
+
+          The optional ``timestamp_callback`` receives the SHA-256 digest of
+          the generated ``encryptedDigest`` and returns an RFC3161
+          TimeStampToken. Alternatively, pass a pre-computed token.
+          )doc"_doc,
+          "certificate"_a, "private_key"_a,
+          "digest_algorithm"_a = ALGORITHMS::SHA_256,
+          "certificate_chain"_a = std::vector<std::string>{},
+          "private_key_password"_a = "",
+          "program_name"_a = "", "more_info"_a = "",
+          "include_signing_time"_a = false, "commercial"_a = false,
+          "timestamp_token"_a = nb::bytes("", 0),
+          "timestamp_callback"_a = nb::none(), nb::lock_self()
       )
 
       .def(

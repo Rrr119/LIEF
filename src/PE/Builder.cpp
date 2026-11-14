@@ -44,6 +44,7 @@
 #include "LIEF/utils.hpp"
 
 #include "PE/Structures.hpp"
+#include "PE/checksum.hpp"
 
 #include "Builder.tcc"
 #include "internal_utils.hpp"
@@ -164,6 +165,49 @@ ok_error_t Builder::build() {
 
   if (!binary_->overlay().empty() && config_.overlay) {
     build_overlay();
+  }
+
+  if (!binary_->authenticode_blob_.empty()) {
+    DataDirectory* cert_dir = binary_->cert_dir();
+    if (cert_dir == nullptr) {
+      LIEF_ERR("Can't write the Authenticode certificate table without a "
+               "CERTIFICATE_TABLE data directory");
+      return make_error_code(lief_errors::build_error);
+    }
+
+    const uint64_t pe_offset = binary_->dos_header().addressof_new_exeheader();
+    const uint64_t cert_entry_offset = pe_offset + sizeof(details::pe_header) +
+                                       (is_64bit ? 112 : 96) +
+                                       sizeof(details::pe_data_directory) * 4;
+
+    const auto cert_offset = static_cast<uint32_t>(ios_.size());
+    const auto cert_size =
+        static_cast<uint32_t>(binary_->authenticode_blob_.size());
+
+    cert_dir->RVA(cert_offset);
+    cert_dir->size(cert_size);
+
+    ios_.seekp(cert_entry_offset)
+        .write<uint32_t>(cert_offset)
+        .write<uint32_t>(cert_size)
+        .seek_end()
+        .write(binary_->authenticode_blob_);
+  }
+
+  if (binary_->update_checksum_) {
+    const uint64_t checksum_offset =
+        binary_->dos_header().addressof_new_exeheader() + 88;
+    uint32_t stored_checksum = 0;
+    const std::vector<uint8_t>& raw = ios_.raw();
+    if (checksum_offset + sizeof(uint32_t) <= raw.size()) {
+      std::memcpy(&stored_checksum, raw.data() + checksum_offset,
+                  sizeof(stored_checksum));
+    }
+    ChecksumStream checksum(stored_checksum);
+    checksum.write(raw.data(), raw.size());
+    const uint32_t value = checksum.finalize();
+    binary_->optional_header_.checksum(value);
+    ios_.seekp(checksum_offset).write<uint32_t>(value);
   }
 
   return ok();

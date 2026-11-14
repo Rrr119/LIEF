@@ -221,6 +221,62 @@ Signer(s)
      Generic Type 1.3.6.1.4.1.311.3.3.1 (MS_COUNTER_SIGN)
 ```
 
+## Exporting, stripping, and re-signing
+
+The {class}`lief.PE.Authenticode` helper exports the PKCS #7 blobs, certificate
+chain, RFC3161/Authenticode timestamps, and the intervals covered by the
+Authenticode digest:
+
+```python
+import lief
+from pathlib import Path
+
+pe = lief.PE.parse("signed.exe")
+extracted = pe.extract_signature()
+
+Path("signature.pkcs7").write_bytes(bytes(extracted.pkcs7))
+for index, cert in enumerate(extracted.certificates):
+    Path(f"cert-{index}.der").write_bytes(bytes(cert.raw))
+for index, timestamp in enumerate(extracted.timestamps):
+    Path(f"timestamp-{index}.der").write_bytes(bytes(timestamp.token))
+for interval in extracted.ranges:
+    print(interval.start, interval.end)
+```
+
+`PE.Binary.remove_signature` removes the certificate table and lets the builder
+restore a consistent overlay, certificate directory, and PE checksum:
+
+```python
+pe = lief.PE.parse("signed.exe")
+if pe.remove_signature():
+    pe.write("unsigned.exe")
+```
+
+The binary can then be signed with a PEM or DER certificate and private key.
+SHA-256 is the default. RFC3161 timestamps can be supplied either as a
+pre-computed token or through a callback that receives the signature digest:
+
+```python
+config = lief.PE.Authenticode.signing_config_t()
+config.certificate = "cert.pem"
+config.private_key = "key.pem"
+config.digest_algorithm = lief.PE.ALGORITHMS.SHA_256
+config.timestamp_callback = lambda digest: fetch_rfc3161_token(digest)
+
+if pe.sign(config):
+    pe.write("resigned.exe")
+```
+
+The equivalent command line interface is available as `lief-authenticode`:
+
+```console
+$ lief-authenticode extract signed.exe -o signature/
+$ lief-authenticode strip signed.exe -o unsigned.exe
+$ lief-authenticode sign unsigned.exe -o resigned.exe \
+    --certificate cert.pem --private-key key.pem \
+    --timestamp-url https://timestamp.example.test
+```
+
 ## Verifying the Signature
 
 In addition to parsing Authenticode signatures, LIEF can also verify the
