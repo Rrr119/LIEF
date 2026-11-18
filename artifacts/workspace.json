@@ -1,0 +1,17 @@
+{
+  "root": "/home/dev/feedback/uid23355",
+  "B": "/home/dev/feedback/uid23355",
+  "sha": "2a6fdbc5a3af9b7ac797514ca38b1175c78f3fcf",
+  "wslDistro": "Ubuntu-26.04",
+  "source": {
+    "owner": "lief-project",
+    "repo": "LIEF",
+    "sha": "2a6fdbc5a3af9b7ac797514ca38b1175c78f3fcf"
+  },
+  "fork": {
+    "owner": "Rrr119",
+    "repo": "LIEF",
+    "cloneUrl": "https://github.com/Rrr119/LIEF.git"
+  },
+  "at": "2026-11-18T07:25:17.091Z"
+}
